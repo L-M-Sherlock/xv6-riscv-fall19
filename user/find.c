@@ -8,7 +8,7 @@ void find(char *path, char *re);
 int main(int argc, char *argv[])
 {
   if(argc < 3){
-    fprintf(2, "usage: find <path> <expression>\n");
+    fprintf(2, "find: find <path> <expression>\n");
     exit();
   }
   find(argv[1], argv[2]);
@@ -34,13 +34,13 @@ void find(char *path, char *re)
   }
   // 读子文件夹
   while(read(fd, &de, sizeof(de)) == sizeof(de)) {
-    // 连接路径
     strcpy(buf, path);
-    p = buf + strlen(buf);
+    p = buf+strlen(buf);
     *p++ = '/';
     if(de.inum == 0) {
       continue;
     }
+    // 连接路径
     memmove(p, de.name, DIRSIZ);
     p[DIRSIZ] = 0;
     if(stat(buf, &st) < 0){
@@ -54,7 +54,7 @@ void find(char *path, char *re)
         }
         break;
       case T_DIR:
-        // recursion
+        // 递归
         if (strcmp(de.name, ".") != 0 && strcmp(de.name, "..") != 0) {
           find(buf, re);
         }
