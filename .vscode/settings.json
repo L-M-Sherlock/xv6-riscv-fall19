@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.tgi": "editorconfig",
+        "*.tcc": "c"
+    }
+}
