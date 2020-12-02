@@ -23,12 +23,11 @@
 #include "fs.h"
 #include "buf.h"
 
-#define NBUCKET      101  // size of block cache buckets
+#define NBUCKET      13  // size of block cache buckets
 
 struct {
   // struct spinlock lock;
   struct buf buf[NBUF];
-  uint unused[NBUF];
 
   // Linked list of all buffers, through prev/next.
   // head.next is most recently used.
@@ -46,6 +45,8 @@ binit(void)
   // initlock(&bcache.lock, "bcache");
   for(int i = 0; i < NBUCKET; i++) {
     initlock(&bcache.bucket_lock[i], "bcache.bucket");
+    bcache.bucket_head[i].prev = &bcache.bucket_head[i];
+    bcache.bucket_head[i].next = &bcache.bucket_head[i];
   }
     
 
@@ -53,17 +54,11 @@ binit(void)
   // bcache.head.prev = &bcache.head;
   // bcache.head.next = &bcache.head;
   for(b = bcache.buf; b < bcache.buf+NBUF; b++){
-    // b->next = bcache.head.next;
-    // b->prev = &bcache.head;
+    b->next = bcache.bucket_head[0].next;
+    b->prev = &bcache.bucket_head[0];
     initsleeplock(&b->lock, "buffer");
-    b->used = 0;
-    // bcache.head.next->prev = b;
-    // bcache.head.next = b;
-  }
-
-  for (int i = 0; i < NBUCKET; i++) {
-    bcache.bucket_head[i].prev = &bcache.bucket_head[i];
-    bcache.bucket_head[i].next = &bcache.bucket_head[i];
+    bcache.bucket_head[0].next->prev = b;
+    bcache.bucket_head[0].next = b;
   }
   
 }
@@ -91,14 +86,20 @@ bget(uint dev, uint blockno)
   }
 
   // Not cached; recycle an unused buffer.
-  for (int i = 0; i < NBUF; i++) {
-    if(!bcache.buf[i].used && __sync_bool_compare_and_swap(&bcache.buf[i].used, 0, 1)) {
-      b = &bcache.buf[i];
+  int next_id = (id + 1) % NBUCKET;
+  for(; next_id != id; next_id = (next_id + 1) % NBUCKET) {
+    acquire(&bcache.bucket_lock[next_id]);
+    for(b = bcache.bucket_head[next_id].prev; b != &bcache.bucket_head[next_id]; b = b->prev) {
       if(b->refcnt == 0) {
         b->dev = dev;
         b->blockno = blockno;
         b->valid = 0;
         b->refcnt = 1;
+
+        b->next->prev = b->prev;
+        b->prev->next = b->next;
+        release(&bcache.bucket_lock[next_id]);
+
         b->next = bcache.bucket_head[id].next;
         b->prev = &bcache.bucket_head[id];
         bcache.bucket_head[id].next->prev = b;
@@ -108,6 +109,7 @@ bget(uint dev, uint blockno)
         return b;
       }
     }
+    release(&bcache.bucket_lock[next_id]);
   }
   panic("bget: no buffers");
 }
@@ -151,13 +153,10 @@ brelse(struct buf *b)
     // no one is waiting for it.
     b->next->prev = b->prev;
     b->prev->next = b->next;
-    // b->next = bcache.head.next;
-    // b->prev = &bcache.head;
-    // bcache.head.next->prev = b;
-    // bcache.head.next = b;
-    if(!__sync_bool_compare_and_swap(&b->used, 1, 0))
-      panic("brelse_cas");
-  }
+    b->next = bcache.bucket_head[id].next;
+    b->prev = &bcache.bucket_head[id];
+    bcache.bucket_head[id].next->prev = b;
+    bcache.bucket_head[id].next = b;
   
   release(&bcache.bucket_lock[id]);
 }
