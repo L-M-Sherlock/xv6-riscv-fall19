@@ -157,7 +157,7 @@ brelse(struct buf *b)
     b->prev = &bcache.bucket_head[id];
     bcache.bucket_head[id].next->prev = b;
     bcache.bucket_head[id].next = b;
-  
+  }
   release(&bcache.bucket_lock[id]);
 }
 
